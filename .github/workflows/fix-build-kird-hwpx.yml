@@ -1,0 +1,38 @@
+name: Fix KIRD HWPX builder
+
+on:
+  push:
+    branches:
+      - hwpx-course-portfolio-3examples-20260905
+    paths:
+      - .github/workflows/fix-build-kird-hwpx.yml
+
+permissions:
+  contents: write
+
+jobs:
+  fix:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: hwpx-course-portfolio-3examples-20260905
+      - name: Remove obsolete preview expression
+        run: |
+          python3 - <<'PYFIX'
+          from pathlib import Path
+          path = Path('.github/workflows/build-kird-hwpx-portfolio.yml')
+          text = path.read_text(encoding='utf-8')
+          marker = '          preview_text = "\\n\\n".join(\n'
+          start = text.index(marker)
+          end = text.index('          # Flatten nested course blocks', start)
+          path.write_text(text[:start] + text[end:], encoding='utf-8')
+          print('Removed obsolete preview expression.')
+          PYFIX
+      - name: Commit fix
+        run: |
+          git config user.name 'OpenAI Artifact Builder'
+          git config user.email 'artifact-builder@users.noreply.github.com'
+          git add .github/workflows/build-kird-hwpx-portfolio.yml
+          git commit -m 'Fix HWPX preview text generation'
+          git push origin HEAD:hwpx-course-portfolio-3examples-20260905
