@@ -1,0 +1,59 @@
+name: Validate KIRD HWPX artifact archive
+
+on:
+  push:
+    branches:
+      - hwpx-course-portfolio-3examples-20260905
+    paths:
+      - .github/workflows/validate-kird-hwpx-artifact.yml
+
+permissions:
+  actions: read
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download artifact archive
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          curl --fail --location \
+            --header "Authorization: Bearer ${GH_TOKEN}" \
+            --header "X-GitHub-Api-Version: 2022-11-28" \
+            --output /tmp/portfolio.hwpx \
+            https://api.github.com/repos/Drayeden/blank-app-20260108/actions/artifacts/9959395772/zip
+      - name: Validate downloaded archive as HWPX
+        run: |
+          python3 - <<'PY'
+          import json, zipfile
+          from pathlib import Path
+          from xml.etree import ElementTree as ET
+          p=Path('/tmp/portfolio.hwpx')
+          required={
+            'mimetype','version.xml','Contents/header.xml','Contents/section0.xml',
+            'Contents/section1.xml','Contents/section2.xml','Contents/content.hpf',
+            'META-INF/container.xml','META-INF/manifest.xml','Preview/PrvText.txt'
+          }
+          with zipfile.ZipFile(p) as z:
+              infos=z.infolist()
+              names=z.namelist()
+              print('size',p.stat().st_size)
+              print('first ten',[(i.filename,i.compress_type,i.file_size) for i in infos[:10]])
+              print('entry count',len(names))
+              missing=sorted(required-set(names))
+              print('missing',missing)
+              assert not missing
+              assert z.read('mimetype')==b'application/hwp+zip'
+              for name in names:
+                  if name.endswith(('.xml','.hpf','.rdf')):
+                      ET.fromstring(z.read(name))
+              assert z.testzip() is None
+              for section, course in [
+                  ('Contents/section0.xml','과학기술외교 실무 입문'),
+                  ('Contents/section1.xml','국제공동연구 프로젝트 관리'),
+                  ('Contents/section2.xml','국제규범 대응과 협상전략')]:
+                  assert course in z.read(section).decode('utf-8')
+              print('HWPX archive validation passed.')
+          PY
