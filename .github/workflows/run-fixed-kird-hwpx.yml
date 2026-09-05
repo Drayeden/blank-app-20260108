@@ -1,0 +1,74 @@
+name: Run fixed KIRD HWPX builder
+
+on:
+  push:
+    branches:
+      - hwpx-course-portfolio-3examples-20260905
+    paths:
+      - .github/workflows/run-fixed-kird-hwpx.yml
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: hwpx-course-portfolio-3examples-20260905
+      - name: Install XML tools
+        run: python3 -m pip install --quiet lxml
+      - name: Extract, patch, and run embedded HWPX builder
+        run: |
+          python3 - <<'PYFIX'
+          from pathlib import Path
+          import subprocess
+          import textwrap
+
+          workflow = Path('.github/workflows/build-kird-hwpx-portfolio.yml').read_text(encoding='utf-8')
+          start_marker = "          python3 - <<'PY'\n"
+          end_marker = "\n          PY\n"
+          start = workflow.index(start_marker) + len(start_marker)
+          end = workflow.index(end_marker, start)
+          script = textwrap.dedent(workflow[start:end])
+
+          obsolete = 'preview_text = "\\n\\n".join(\n'
+          obsolete_start = script.index(obsolete)
+          obsolete_end = script.index('# Flatten nested course blocks', obsolete_start)
+          script = script[:obsolete_start] + script[obsolete_end:]
+
+          Path('/tmp/build_hwpx.py').write_text(script, encoding='utf-8')
+          subprocess.run(['python3', '/tmp/build_hwpx.py'], check=True)
+          PYFIX
+      - name: Validate HWPX package
+        run: |
+          unzip -t outputs/KIRD_scitech_diplomacy_course_portfolio_3_examples_20260905.hwpx
+          python3 - <<'PYVALIDATE'
+          import zipfile
+          from lxml import etree
+          p='outputs/KIRD_scitech_diplomacy_course_portfolio_3_examples_20260905.hwpx'
+          with zipfile.ZipFile(p) as z:
+              infos=z.infolist()
+              assert infos[0].filename=='mimetype'
+              assert infos[0].compress_type==zipfile.ZIP_STORED
+              assert z.read('mimetype')==b'application/hwp+zip'
+              sections=[n for n in z.namelist() if n.startswith('Contents/section') and n.endswith('.xml')]
+              assert sections==['Contents/section0.xml','Contents/section1.xml','Contents/section2.xml']
+              for n in z.namelist():
+                  if n.endswith(('.xml','.hpf','.rdf')):
+                      etree.fromstring(z.read(n))
+              assert z.testzip() is None
+          print('HWPX package and XML validation passed.')
+          PYVALIDATE
+      - name: Commit generated HWPX
+        run: |
+          git config user.name 'OpenAI Artifact Builder'
+          git config user.email 'artifact-builder@users.noreply.github.com'
+          git add outputs
+          if git diff --cached --quiet; then
+            echo 'No generated changes to commit.'
+          else
+            git commit -m 'Build three KIRD course portfolio examples in HWPX'
+            git push origin HEAD:hwpx-course-portfolio-3examples-20260905
+          fi
