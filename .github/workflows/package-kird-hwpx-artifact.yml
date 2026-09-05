@@ -1,0 +1,40 @@
+name: Package KIRD HWPX as downloadable artifact
+
+on:
+  push:
+    branches:
+      - hwpx-course-portfolio-3examples-20260905
+    paths:
+      - .github/workflows/package-kird-hwpx-artifact.yml
+
+permissions:
+  actions: read
+  contents: read
+
+jobs:
+  package:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: hwpx-course-portfolio-3examples-20260905
+      - name: Expand validated HWPX package
+        run: |
+          rm -rf artifact_hwpx
+          mkdir artifact_hwpx
+          unzip -q outputs/KIRD_scitech_diplomacy_course_portfolio_3_examples_20260905.hwpx -d artifact_hwpx
+          test "$(cat artifact_hwpx/mimetype)" = "application/hwp+zip"
+      - name: Upload HWPX package parts as artifact archive
+        uses: actions/upload-artifact@v4
+        with:
+          name: KIRD-scitech-diplomacy-course-portfolio-3-examples-HWPX
+          compression-level: 0
+          retention-days: 2
+          if-no-files-found: error
+          path: |
+            artifact_hwpx/mimetype
+            artifact_hwpx/version.xml
+            artifact_hwpx/Contents
+            artifact_hwpx/META-INF
+            artifact_hwpx/Preview
+            artifact_hwpx/settings.xml
