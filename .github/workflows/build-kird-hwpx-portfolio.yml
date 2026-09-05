@@ -1,0 +1,551 @@
+name: Build KIRD HWPX course portfolio examples
+
+on:
+  push:
+    branches:
+      - hwpx-course-portfolio-3examples-20260905
+    paths:
+      - .github/workflows/build-kird-hwpx-portfolio.yml
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: hwpx-course-portfolio-3examples-20260905
+
+      - name: Install XML tools
+        run: python3 -m pip install --quiet lxml
+
+      - name: Build three-course HWPX from the fixed template
+        run: |
+          python3 - <<'PY'
+          from __future__ import annotations
+
+          import hashlib
+          import io
+          import json
+          import shutil
+          import urllib.request
+          import zipfile
+          from copy import deepcopy
+          from pathlib import Path
+          from lxml import etree
+
+          TEMPLATE_ID = "1Uxk3T-94oXxYYnSGGnVM0CnH6uZjZCdU"
+          TEMPLATE_URL = (
+              "https://drive.usercontent.google.com/download"
+              f"?id={TEMPLATE_ID}&export=download&confirm=t"
+          )
+          OUTPUT_DIR = Path("outputs")
+          OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+          OUTPUT_NAME = "KIRD_scitech_diplomacy_course_portfolio_3_examples_20260905.hwpx"
+          OUTPUT_PATH = OUTPUT_DIR / OUTPUT_NAME
+
+          request = urllib.request.Request(
+              TEMPLATE_URL,
+              headers={"User-Agent": "Mozilla/5.0"},
+          )
+          with urllib.request.urlopen(request, timeout=90) as response:
+              template_bytes = response.read()
+          if not template_bytes.startswith(b"PK"):
+              raise RuntimeError("The downloaded template is not a valid HWPX/ZIP package.")
+
+          with zipfile.ZipFile(io.BytesIO(template_bytes), "r") as source_zip:
+              names = source_zip.namelist()
+              required = {
+                  "mimetype",
+                  "version.xml",
+                  "Contents/header.xml",
+                  "Contents/section0.xml",
+                  "Contents/content.hpf",
+                  "Preview/PrvText.txt",
+                  "META-INF/container.xml",
+              }
+              missing = required.difference(names)
+              if missing:
+                  raise RuntimeError(f"Template is missing required HWPX parts: {sorted(missing)}")
+              original_parts = {name: source_zip.read(name) for name in names}
+
+          HP_NS = "http://www.hancom.co.kr/hwpml/2011/paragraph"
+          NS = {"hp": HP_NS}
+
+          courses = [
+              {
+                  "name": "과학기술외교 실무 입문",
+                  "goals": [
+                      "- 과학기술외교의 5대 활동유형과 주요 업무단계를 이해한다.",
+                      "- 담당업무의 이해관계자·정보·절차를 구분하고 업무착수 체크리스트를 작성한다.",
+                  ],
+                  "target": "산·학·연 연구개발·연구행정 분야의 활동 무경험자 및 신규 담당자",
+                  "period": "사전 이러닝 1시간 + 대면교육 6시간(혼합형)",
+                  "competencies": "글로벌 전략환경 분석, 글로벌 정책분석, 글로벌 의사소통, 글로벌 책임윤리",
+                  "rows": [
+                      {
+                          "competency": "[글로벌 전략환경 분석]",
+                          "subject": "과학기술외교의 범위와 5대 활동유형",
+                          "element": "5대 활동유형과 주요 업무단계 구분",
+                          "type": "인지", "level": "중간",
+                          "content": "개념·활동유형·수행단계",
+                          "methods": ["이러닝", "강의", "사례"],
+                          "outputs": ["활동유형 분류표"],
+                          "tools": ["분류 정확성 체크리스트"],
+                          "stage": "학습",
+                      },
+                      {
+                          "competency": "[글로벌 정책분석]",
+                          "subject": "과학기술외교 업무흐름과 관계기관",
+                          "element": "담당업무 관련 이해관계자·의사결정 구조 분석",
+                          "type": "인지", "level": "중간",
+                          "content": "관계기관·역할·의사결정",
+                          "methods": ["사례분석", "매핑실습", "피드백"],
+                          "outputs": ["이해관계자 맵"],
+                          "tools": ["이해관계자 분석 루브릭"],
+                          "stage": "학습",
+                      },
+                      {
+                          "competency": "[글로벌 의사소통]",
+                          "subject": "직무별 역할과 협업 접점",
+                          "element": "연구개발·연구행정 역할과 소통 접점 설정",
+                          "type": "정의", "level": "중간",
+                          "content": "역할분담·소통채널·인계",
+                          "methods": ["사례", "토의", "개인실습"],
+                          "outputs": ["개인별 직무맵", "협업 접점표"],
+                          "tools": ["직무맵", "평가", "루브릭"],
+                          "stage": "현업적용도",
+                      },
+                      {
+                          "competency": "[글로벌 책임윤리]",
+                          "subject": "업무착수 기본 확인사항",
+                          "element": "윤리·보안·IP·승인 절차의 확인항목 작성",
+                          "type": "심동", "level": "낮음",
+                          "content": "연구보안·IP·데이터·승인",
+                          "methods": ["사례", "체크리스트 실습", "피드백"],
+                          "outputs": ["업무착수 체크리스트"],
+                          "tools": ["완전성·활용성 루브릭"],
+                          "stage": "현업적용도",
+                      },
+                  ],
+              },
+              {
+                  "name": "국제공동연구 프로젝트 관리",
+                  "goals": [
+                      "- 국제공동연구의 파트너별 역할과 의사결정체계를 설계한다.",
+                      "- 일정·변경·위험·성과를 통합하여 실행 가능한 프로젝트 계획을 수립한다.",
+                  ],
+                  "target": "국제공동연구 기획·수행·지원 담당 연구개발·연구행정 실무자 및 과제책임자",
+                  "period": "대면 워크숍 1일 7시간(집합 실습형)",
+                  "competencies": "글로벌 기획·조정, 글로벌 문제해결, 글로벌 의사소통, 글로벌 성과관리",
+                  "rows": [
+                      {
+                          "competency": "[글로벌 기획·조정]",
+                          "subject": "국제공동연구 전주기와 실행체계",
+                          "element": "기획·협약·수행·변경·성과의 의사결정 지점 구조화",
+                          "type": "인지", "level": "중간",
+                          "content": "전주기·거버넌스·의사결정",
+                          "methods": ["강의", "사례분석", "팀토의"],
+                          "outputs": ["전주기 실행맵"],
+                          "tools": ["완전성 체크리스트"],
+                          "stage": "학습",
+                      },
+                      {
+                          "competency": "[글로벌 의사소통]",
+                          "subject": "파트너 역할·일정·자원 관리",
+                          "element": "파트너별 역할·책임과 일정·자원 조정안 작성",
+                          "type": "심동", "level": "중간",
+                          "content": "역할분담·일정·자원·조정",
+                          "methods": ["사례", "팀실습", "동료리뷰"],
+                          "outputs": ["역할분담표·통합일정"],
+                          "tools": ["역할·일정 조정 루브릭"],
+                          "stage": "성과기여도",
+                      },
+                      {
+                          "competency": "[글로벌 문제해결]",
+                          "subject": "위험·변경관리",
+                          "element": "예산·일정·범위 위험을 식별하고 대응대안 설계",
+                          "type": "인지", "level": "높음",
+                          "content": "위험등록·변경통제·대안",
+                          "methods": ["사례분석", "팀실습", "피드백"],
+                          "outputs": ["위험관리표", "변경대응안"],
+                          "tools": ["위험대응", "평가", "루브릭"],
+                          "stage": "현업적용도",
+                      },
+                      {
+                          "competency": "[글로벌 성과관리]",
+                          "subject": "성과·후속협력과 실행계획",
+                          "element": "성과경로와 후속조치를 포함한 실행계획 통합",
+                          "type": "심동", "level": "중간",
+                          "content": "산출물·활용·후속협력",
+                          "methods": ["팀실습", "전문가피드백", "개인회고"],
+                          "outputs": ["프로젝트 실행계획서"],
+                          "tools": ["논리성·실행가능성 루브릭"],
+                          "stage": "성과기여도",
+                      },
+                  ],
+              },
+              {
+                  "name": "국제규범 대응과 협상전략",
+                  "goals": [
+                      "- 국제규범·협상 의제의 이해관계자·권한·입장과 핵심 쟁점을 분석한다.",
+                      "- 협상목표·최소수용조건·대안을 설정하고 양자·다자협상에서 전략적으로 대응한다.",
+                  ],
+                  "target": "국제회의·국제협약·공동연구 협상 또는 국제규범 대응 담당 독립 실무자·경험자",
+                  "period": "대면 워크숍 1일 7시간(집합 시뮬레이션형)",
+                  "competencies": "글로벌 정책분석, 글로벌 의사소통, 글로벌 기획·조정, 글로벌 문제해결",
+                  "rows": [
+                      {
+                          "competency": "[글로벌 정책분석]",
+                          "subject": "국제규범·협상구조와 쟁점분석",
+                          "element": "규범·조항·이해관계자별 핵심 쟁점 분석",
+                          "type": "인지", "level": "높음",
+                          "content": "규범·조항·권한·이해관계",
+                          "methods": ["강의", "사례분석", "이해관계자 분석"],
+                          "outputs": ["쟁점분석표"],
+                          "tools": ["쟁점분석 루브릭"],
+                          "stage": "현업적용도",
+                      },
+                      {
+                          "competency": "[글로벌 기획·조정]",
+                          "subject": "협상목표·최소조건·대안 설계",
+                          "element": "목표·최소수용조건·대안·연대 가능 주체 설정",
+                          "type": "인지", "level": "높음",
+                          "content": "협상목표·최소조건·대안",
+                          "methods": ["사례", "템플릿 실습", "피드백"],
+                          "outputs": ["입장메모"],
+                          "tools": ["전략 일관성 루브릭"],
+                          "stage": "현업적용도",
+                      },
+                      {
+                          "competency": "[글로벌 의사소통]",
+                          "subject": "양자·다자협상 메시지와 내부조정",
+                          "element": "핵심 메시지와 기관 내 조정·승인 순서 설계",
+                          "type": "심동", "level": "중간",
+                          "content": "입장메시지·내부조정·승인",
+                          "methods": ["사례", "역할연습", "코칭"],
+                          "outputs": ["메시지 맵", "내부조정안"],
+                          "tools": ["역할연습", "관찰", "체크리스트"],
+                          "stage": "성과기여도",
+                      },
+                      {
+                          "competency": "[글로벌 문제해결]",
+                          "subject": "상황변화 대응 역할연습",
+                          "element": "상대 이해관계 변화에 맞춰 협상전략과 메시지 조정",
+                          "type": "심동", "level": "중간",
+                          "content": "대응시나리오·전략조정",
+                          "methods": ["역할연습", "동료피드백", "전문가피드백"],
+                          "outputs": ["국제협상 준비서"],
+                          "tools": ["쟁점·일관성·대응력 루브릭"],
+                          "stage": "성과기여도",
+                      },
+                  ],
+              },
+          ]
+
+          def set_text(text_nodes, index: int, value: str) -> None:
+              if index >= len(text_nodes):
+                  raise IndexError(f"Text node index {index} is out of range ({len(text_nodes)} nodes).")
+              text_nodes[index].text = value
+
+          def fill_section(template_xml: bytes, course: dict) -> bytes:
+              parser = etree.XMLParser(remove_blank_text=False, recover=False)
+              root = etree.fromstring(template_xml, parser=parser)
+              text_nodes = root.xpath(".//hp:t", namespaces=NS)
+              if len(text_nodes) < 131:
+                  raise RuntimeError(f"Unexpected template structure: only {len(text_nodes)} hp:t nodes.")
+
+              # Preserve the provided table, cell geometry, fonts, borders, fills and spacing.
+              set_text(text_nodes, 0, "붙임1")
+              set_text(text_nodes, 1, " 교육과정 포트폴리오")
+              set_text(text_nodes, 4, course["name"])
+              set_text(text_nodes, 8, course["goals"][0])
+              set_text(text_nodes, 9, course["goals"][1])
+              set_text(text_nodes, 11, course["target"])
+              set_text(text_nodes, 13, course["period"])
+              set_text(text_nodes, 15, course["competencies"])
+
+              # Remove review comments embedded in the supplied example while keeping the fixed cell.
+              for idx in (18, 19, 20, 21):
+                  set_text(text_nodes, idx, "")
+
+              row_maps = [
+                  {
+                      "competency": 35, "subject": 36, "combined": False,
+                      "element": 37, "type": 38, "level": 39, "content": 40,
+                      "methods": [41, 42, 43], "outputs": [44], "tools": [45], "stage": 46,
+                  },
+                  {
+                      "competency": 47, "subject": None, "combined": True,
+                      "element": 48, "type": 49, "level": 50, "content": 51,
+                      "methods": [52, 53, 54], "outputs": [55], "tools": [56], "stage": 57,
+                  },
+                  {
+                      "competency": 58, "subject": 59, "combined": False,
+                      "element": 60, "type": 61, "level": 62, "content": 63,
+                      "methods": [64, 65, 66], "outputs": [67, 68], "tools": [69, 70, 71], "stage": 72,
+                  },
+                  {
+                      "competency": 73, "subject": None, "combined": True,
+                      "element": 74, "type": 75, "level": 76, "content": 77,
+                      "methods": [78, 79, 80], "outputs": [81], "tools": [82], "stage": 83,
+                  },
+              ]
+
+              for row, mapping in zip(course["rows"], row_maps, strict=True):
+                  if mapping["combined"]:
+                      set_text(text_nodes, mapping["competency"], row["competency"] + row["subject"])
+                  else:
+                      set_text(text_nodes, mapping["competency"], row["competency"])
+                      set_text(text_nodes, mapping["subject"], row["subject"])
+                  set_text(text_nodes, mapping["element"], row["element"])
+                  set_text(text_nodes, mapping["type"], row["type"])
+                  set_text(text_nodes, mapping["level"], row["level"])
+                  set_text(text_nodes, mapping["content"], row["content"])
+
+                  for idx, value in zip(mapping["methods"], row["methods"], strict=True):
+                      set_text(text_nodes, idx, value)
+
+                  output_values = row["outputs"] + [""] * (len(mapping["outputs"]) - len(row["outputs"]))
+                  tool_values = row["tools"] + [""] * (len(mapping["tools"]) - len(row["tools"]))
+                  for idx, value in zip(mapping["outputs"], output_values, strict=True):
+                      set_text(text_nodes, idx, value)
+                  for idx, value in zip(mapping["tools"], tool_values, strict=True):
+                      set_text(text_nodes, idx, value)
+                  set_text(text_nodes, mapping["stage"], row["stage"])
+
+              # Delete stale line-layout caches so Hangul recalculates text wrapping on open.
+              for line_array in root.xpath(".//hp:linesegarray", namespaces=NS):
+                  parent = line_array.getparent()
+                  if parent is not None:
+                      parent.remove(line_array)
+
+              return etree.tostring(
+                  root,
+                  xml_declaration=True,
+                  encoding="UTF-8",
+                  standalone=True,
+                  pretty_print=False,
+              )
+
+          sections = [fill_section(original_parts["Contents/section0.xml"], course) for course in courses]
+
+          # Add section1 and section2 to the package manifest/spine without changing the template styles.
+          hpf_parser = etree.XMLParser(remove_blank_text=False, recover=False)
+          hpf_root = etree.fromstring(original_parts["Contents/content.hpf"], parser=hpf_parser)
+          title_nodes = hpf_root.xpath("//*[local-name()='title']")
+          if title_nodes:
+              title_nodes[0].text = "과학기술외교 교육과정 포트폴리오 예시 3개 과정"
+          manifest_nodes = hpf_root.xpath("//*[local-name()='manifest']")
+          spine_nodes = hpf_root.xpath("//*[local-name()='spine']")
+          if not manifest_nodes or not spine_nodes:
+              raise RuntimeError("Could not locate OPF manifest/spine in Contents/content.hpf")
+          manifest = manifest_nodes[0]
+          spine = spine_nodes[0]
+          existing_items = manifest.xpath("./*[local-name()='item']")
+          existing_refs = spine.xpath("./*[local-name()='itemref']")
+          if not existing_items or not existing_refs:
+              raise RuntimeError("Unexpected OPF structure in Contents/content.hpf")
+          item_tag = existing_items[0].tag
+          itemref_tag = existing_refs[0].tag
+          for section_number in (1, 2):
+              etree.SubElement(
+                  manifest,
+                  item_tag,
+                  id=f"section{section_number}",
+                  href=f"Contents/section{section_number}.xml",
+                  **{"media-type": "application/xml"},
+              )
+              etree.SubElement(
+                  spine,
+                  itemref_tag,
+                  idref=f"section{section_number}",
+                  linear="yes",
+              )
+          content_hpf = etree.tostring(
+              hpf_root,
+              xml_declaration=True,
+              encoding="UTF-8",
+              standalone=True,
+              pretty_print=False,
+          )
+
+          preview_text = "\n\n".join(
+              [
+                  "교육과정 포트폴리오",
+                  course["name"],
+                  "교육목표",
+                  *course["goals"],
+                  "교육대상",
+                  course["target"],
+                  "교육기간",
+                  course["period"],
+                  "관련역량",
+                  course["competencies"],
+                  "학습 포트폴리오",
+                  *[
+                      " | ".join(
+                          [
+                              row["competency"], row["subject"], row["element"],
+                              row["type"], row["level"], row["content"],
+                              ", ".join(row["methods"]),
+                              ", ".join(row["outputs"]),
+                              ", ".join(row["tools"]), row["stage"],
+                          ]
+                      )
+                      for row in course["rows"]
+                  ],
+              ]
+              for course in courses
+          )
+          # Flatten nested course blocks into readable preview text.
+          preview_blocks = []
+          for course in courses:
+              block = [
+                  "교육과정 포트폴리오",
+                  course["name"],
+                  "교육목표",
+                  *course["goals"],
+                  "교육대상: " + course["target"],
+                  "교육기간: " + course["period"],
+                  "관련역량: " + course["competencies"],
+                  "학습 포트폴리오",
+              ]
+              for row in course["rows"]:
+                  block.append(
+                      " / ".join(
+                          [
+                              row["competency"] + row["subject"],
+                              row["element"], row["type"] + "·" + row["level"],
+                              row["content"], ", ".join(row["methods"]),
+                              ", ".join(row["outputs"]),
+                              ", ".join(row["tools"]), row["stage"],
+                          ]
+                      )
+                  )
+              preview_blocks.append("\n".join(block))
+          preview_text = "\n\n".join(preview_blocks) + "\n"
+
+          replacement_parts = {
+              "Contents/section0.xml": sections[0],
+              "Contents/content.hpf": content_hpf,
+              "Preview/PrvText.txt": preview_text.encode("utf-8"),
+          }
+
+          with zipfile.ZipFile(OUTPUT_PATH, "w") as output_zip:
+              # OCF/HWPX requirement: mimetype must be the first entry and uncompressed.
+              mimetype_info = zipfile.ZipInfo("mimetype")
+              mimetype_info.compress_type = zipfile.ZIP_STORED
+              mimetype_info.external_attr = 0o600 << 16
+              output_zip.writestr(mimetype_info, original_parts["mimetype"], compress_type=zipfile.ZIP_STORED)
+
+              for name in names:
+                  if name == "mimetype" or name in replacement_parts:
+                      continue
+                  info = zipfile.ZipInfo(name)
+                  info.compress_type = zipfile.ZIP_DEFLATED
+                  info.external_attr = 0o600 << 16
+                  output_zip.writestr(info, original_parts[name], compress_type=zipfile.ZIP_DEFLATED)
+
+              for name in ("Contents/content.hpf", "Contents/section0.xml"):
+                  info = zipfile.ZipInfo(name)
+                  info.compress_type = zipfile.ZIP_DEFLATED
+                  info.external_attr = 0o600 << 16
+                  output_zip.writestr(info, replacement_parts[name], compress_type=zipfile.ZIP_DEFLATED)
+
+              for section_number in (1, 2):
+                  name = f"Contents/section{section_number}.xml"
+                  info = zipfile.ZipInfo(name)
+                  info.compress_type = zipfile.ZIP_DEFLATED
+                  info.external_attr = 0o600 << 16
+                  output_zip.writestr(info, sections[section_number], compress_type=zipfile.ZIP_DEFLATED)
+
+              info = zipfile.ZipInfo("Preview/PrvText.txt")
+              info.compress_type = zipfile.ZIP_DEFLATED
+              info.external_attr = 0o600 << 16
+              output_zip.writestr(info, replacement_parts["Preview/PrvText.txt"], compress_type=zipfile.ZIP_DEFLATED)
+
+          # Structural validation.
+          with zipfile.ZipFile(OUTPUT_PATH, "r") as check_zip:
+              infos = check_zip.infolist()
+              assert infos[0].filename == "mimetype"
+              assert infos[0].compress_type == zipfile.ZIP_STORED
+              assert check_zip.read("mimetype") == b"application/hwp+zip"
+              for section_number, course in enumerate(courses):
+                  section_name = f"Contents/section{section_number}.xml"
+                  section_bytes = check_zip.read(section_name)
+                  etree.fromstring(section_bytes)
+                  section_text = "".join(
+                      etree.fromstring(section_bytes).xpath(".//hp:t/text()", namespaces=NS)
+                  )
+                  assert course["name"] in section_text
+                  for row in course["rows"]:
+                      assert row["subject"] in section_text
+              etree.fromstring(check_zip.read("Contents/content.hpf"))
+              bad_file = check_zip.testzip()
+              if bad_file is not None:
+                  raise RuntimeError(f"CRC failure in {bad_file}")
+
+          digest = hashlib.sha256(OUTPUT_PATH.read_bytes()).hexdigest()
+          metadata = {
+              "file": OUTPUT_NAME,
+              "size": OUTPUT_PATH.stat().st_size,
+              "sha256": digest,
+              "courses": [course["name"] for course in courses],
+              "template_file_id": TEMPLATE_ID,
+              "format": "HWPX",
+              "section_count": 3,
+          }
+          (OUTPUT_DIR / "build_metadata.json").write_text(
+              json.dumps(metadata, ensure_ascii=False, indent=2), encoding="utf-8"
+          )
+          print(json.dumps(metadata, ensure_ascii=False, indent=2))
+          PY
+
+      - name: Test HWPX package integrity
+        run: |
+          unzip -t outputs/KIRD_scitech_diplomacy_course_portfolio_3_examples_20260905.hwpx
+          python3 - <<'PY'
+          import zipfile
+          from lxml import etree
+          p='outputs/KIRD_scitech_diplomacy_course_portfolio_3_examples_20260905.hwpx'
+          with zipfile.ZipFile(p) as z:
+              print('Package entries:', len(z.infolist()))
+              print('Sections:', [n for n in z.namelist() if n.startswith('Contents/section')])
+              for n in z.namelist():
+                  if n.endswith('.xml') or n.endswith('.hpf') or n.endswith('.rdf'):
+                      etree.fromstring(z.read(n))
+          print('All XML package parts parsed successfully.')
+          PY
+
+      - name: Attempt visual rendering with LibreOffice
+        continue-on-error: true
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq libreoffice-writer poppler-utils fonts-noto-cjk
+          mkdir -p outputs/preview
+          timeout 180 libreoffice --headless --convert-to pdf --outdir outputs/preview outputs/KIRD_scitech_diplomacy_course_portfolio_3_examples_20260905.hwpx || true
+          PDF='outputs/preview/KIRD_scitech_diplomacy_course_portfolio_3_examples_20260905.pdf'
+          if [ -f "$PDF" ]; then
+            pdfinfo "$PDF" > outputs/preview/pdfinfo.txt
+            pdftotext -layout "$PDF" outputs/preview/extracted.txt
+            pdftoppm -png -r 120 -f 1 -l 6 "$PDF" outputs/preview/page
+            cat outputs/preview/pdfinfo.txt
+          else
+            echo 'LibreOffice HWPX rendering was unavailable; package-level validation completed.' > outputs/preview/render-note.txt
+          fi
+
+      - name: Commit generated HWPX and validation artifacts
+        run: |
+          git config user.name 'OpenAI Artifact Builder'
+          git config user.email 'artifact-builder@users.noreply.github.com'
+          git add outputs
+          if git diff --cached --quiet; then
+            echo 'No generated changes to commit.'
+          else
+            git commit -m 'Build three KIRD course portfolio examples in HWPX'
+            git push origin HEAD:hwpx-course-portfolio-3examples-20260905
+          fi
